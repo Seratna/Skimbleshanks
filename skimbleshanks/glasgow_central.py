@@ -59,20 +59,41 @@ class GlasgowCentral(Station):
                     logger.info(f'failed to connect to {host}:{port}')
                     await self.wcml_server.send_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
                                                              from_id=0,
-                                                             to_id=from_id,
-                                                             host=host,
-                                                             port=port)
+                                                             to_id=from_id)
 
             asyncio.create_task(connect())
 
         elif message_type == WCMLMessageType.DATA:
             data = kwargs['data']
 
-            protocol: GlasgowCentralProtocol = self._id_2_protocol[to_id]
-            protocol.data_received_from_wcml_counter_party(data)
+            try:
+                protocol: GlasgowCentralProtocol = self._id_2_protocol[to_id]
+            except KeyError:
+                self.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
+                                           from_id=to_id,
+                                           to_id=from_id)
+            else:
+                protocol.data_received_from_wcml_counter_party(data)
+
+        elif message_type == WCMLMessageType.CONNECTION_LOST:
+            try:
+                protocol: GlasgowCentralProtocol = self._id_2_protocol[to_id]
+            except KeyError:
+                pass
+            else:
+                protocol.close()
 
         else:
             raise NotImplementedError
+
+    def on_wcml_close(self):
+        """
+        websocket connection was closed. clean up the protocols.
+        """
+        protocols: List[GlasgowCentralProtocol] = list(self._id_2_protocol.values())
+        for protocol in protocols:
+            protocol.close()
+        logger.debug('all protocols closed')
 
     def start_service(self):
         raise NotImplementedError
@@ -97,7 +118,14 @@ class GlasgowCentralProtocol(BaseProtocol):
         self._transport = transport
         self._station.register(protocol=self)
 
-        host, port = transport.get_extra_info('peername')
+        peername = transport.get_extra_info('peername')
+        if len(peername) == 2:
+            host, port = peername
+        elif len(peername) == 4:
+            host, port, flow_info, scope_id = peername
+        else:
+            raise ValueError(f'unknown peername format: {peername}')
+
         self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_MADE,
                                             from_id=self.id,
                                             to_id=self._counter_party_id,
@@ -107,6 +135,10 @@ class GlasgowCentralProtocol(BaseProtocol):
     def connection_lost(self, exc):
         self._transport.close()
         # self._station.unregister(protocol=self)
+
+    def close(self):
+        self._transport.close()
+        self._station.unregister(protocol=self)
 
     def data_received(self, data):
         self._station.outgoing_wcml_message(message_type=WCMLMessageType.DATA,
@@ -170,16 +202,10 @@ class WCMLServer(object):
                            data)
 
         elif message_type == WCMLMessageType.CONNECTION_LOST:
-            host: str = kwargs['host']
-            port: int = kwargs['port']
-
-            message = pack(f'!BQQB{len(host)}sH',
+            message = pack(f'!BQQ',
                            message_type,
                            from_id,
-                           to_id,
-                           len(host),  # length of hostname
-                           host.encode('utf-8'),
-                           port)
+                           to_id)
 
         else:
             raise NotImplementedError
@@ -210,7 +236,7 @@ class WCMLServer(object):
                     host = reader.read(host_length).decode('utf-8')
                     port = unpack('!H', reader.read(2))[0]
 
-                    self._station.incoming_wcml_message(message_type=WCMLMessageType.CONNECTION_REQUEST,
+                    self._station.incoming_wcml_message(message_type=wcml_msg_type,
                                                         from_id=from_id,
                                                         to_id=to_id,
                                                         host=host,
@@ -219,21 +245,29 @@ class WCMLServer(object):
                 elif wcml_msg_type == WCMLMessageType.DATA:
                     data = reader.read()
 
-                    self._station.incoming_wcml_message(message_type=WCMLMessageType.DATA,
+                    self._station.incoming_wcml_message(message_type=wcml_msg_type,
                                                         from_id=from_id,
                                                         to_id=to_id,
                                                         data=data)
+
+                elif wcml_msg_type == WCMLMessageType.CONNECTION_LOST:
+                    self._station.incoming_wcml_message(message_type=wcml_msg_type,
+                                                        from_id=from_id,
+                                                        to_id=to_id)
 
                 else:
                     raise NotImplementedError
 
             elif msg.type == aiohttp.WSMsgType.ERROR:
-                logger.warning(f'ws connection closed with exception {ws.exception()}')
+                logger.info(f'received aiohttp.WSMsgType.ERROR message: {msg.data}')
 
             else:
                 raise TypeError(f'unknown message type: {msg.type}')
 
         logger.info('websocket connection closed')
+
+        # close all protocols
+        self._station.on_wcml_close()
 
         self._ws = None
         return ws
