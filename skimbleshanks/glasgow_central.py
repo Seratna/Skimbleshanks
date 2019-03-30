@@ -43,17 +43,27 @@ class GlasgowCentral(Station):
             host = kwargs['host']
             port = kwargs['port']
 
-            loop = asyncio.get_running_loop()
+            logger.info(f'request connection to {host}:{port}')
 
             def protocol_factory() -> GlasgowCentralProtocol:
                 return GlasgowCentralProtocol(station=self,
                                               counter_party_id=from_id)
 
-            asyncio.create_task(
-                loop.create_connection(protocol_factory=protocol_factory,
-                                       host=host,
-                                       port=port)
-            )
+            async def connect():
+                loop = asyncio.get_running_loop()
+                try:
+                    await loop.create_connection(protocol_factory=protocol_factory,
+                                                 host=host,
+                                                 port=port)
+                except (TimeoutError, OSError):
+                    logger.info(f'failed to connect to {host}:{port}')
+                    await self.wcml_server.send_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
+                                                             from_id=0,
+                                                             to_id=from_id,
+                                                             host=host,
+                                                             port=port)
+
+            asyncio.create_task(connect())
 
         elif message_type == WCMLMessageType.DATA:
             data = kwargs['data']
@@ -143,7 +153,7 @@ class WCMLServer(object):
             port: int = kwargs['port']
 
             message = pack(f'!BQQB{len(host)}sH',
-                           WCMLMessageType.CONNECTION_MADE,  # message_type
+                           message_type,
                            from_id,
                            to_id,
                            len(host),  # length of hostname
@@ -154,10 +164,23 @@ class WCMLServer(object):
             data = kwargs['data']
 
             message = pack(f'!BQQ{len(data)}s',
-                           WCMLMessageType.DATA,  # message_type
+                           message_type,
                            from_id,
                            to_id,
                            data)
+
+        elif message_type == WCMLMessageType.CONNECTION_LOST:
+            host: str = kwargs['host']
+            port: int = kwargs['port']
+
+            message = pack(f'!BQQB{len(host)}sH',
+                           message_type,
+                           from_id,
+                           to_id,
+                           len(host),  # length of hostname
+                           host.encode('utf-8'),
+                           port)
+
         else:
             raise NotImplementedError
 

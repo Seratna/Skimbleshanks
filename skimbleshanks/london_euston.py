@@ -24,7 +24,7 @@ class LondonEuston(Station):
     def __init__(self):
         Station.__init__(self)
 
-        self._london_euston_host: str = '192.168.10.51'  # TODO
+        self._london_euston_host: str = '192.168.1.3'  # TODO
         self._london_euston_port: int = 8888
 
         self._wcml_client: WCMLClient = WCMLClient(station=self,
@@ -66,6 +66,13 @@ class LondonEuston(Station):
 
             protocol: LondonEustonProtocol = self._id_2_protocol[to_id]
             protocol.data_received_from_wcml_counter_party(data)
+
+        elif message_type == WCMLMessageType.CONNECTION_LOST:
+            host = kwargs['host']
+            port = kwargs['port']
+
+            protocol: LondonEustonProtocol = self._id_2_protocol[to_id]
+            protocol.glasgow_central_connection_lost(host, port)
 
         else:
             raise NotImplementedError
@@ -146,6 +153,7 @@ class LondonEustonProtocol(BaseProtocol):
 
             username = username_bytes.decode('utf-8')
             password = password_bytes.decode('utf-8')
+            logger.debug(f'username: {username}, password: {password}')
 
             # TODO authentication
             pass
@@ -179,15 +187,14 @@ class LondonEustonProtocol(BaseProtocol):
 
             port = unpack('!H', reader.read(2))[0]
 
+            logger.debug(f'request connection to {host}:{port}')
+
             # request_glasgow_central_connection
             self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_REQUEST,
                                                 from_id=self.id,
                                                 to_id=self._counter_party_id,
                                                 host=host,
                                                 port=port)
-
-            # update state
-            self._state = self.DATA
 
         elif self._state == self.DATA:
             self._station.outgoing_wcml_message(message_type=WCMLMessageType.DATA,
@@ -201,6 +208,18 @@ class LondonEustonProtocol(BaseProtocol):
     def glasgow_central_connection_made(self, host, port):
         host = unpack("!I", socket.inet_aton(host))[0]
         self._transport.write(pack('!BBBBIH', 0x05, 0x00, 0x00, 0x01, host, port))
+
+        # update state
+        self._state = self.DATA
+
+    def glasgow_central_connection_lost(self, host, port):
+        logger.debug(f'lost connection to {host}:{port}')
+
+        if self._state == self.REQUEST:
+            self._transport.write(pack(f'!BBBBB{len(host)}sH',
+                                       0x05, 0x04, 0x00, 0x03, len(host), host.encode('utf-8'), port))
+        elif self._state == self.DATA:
+            self.close()
 
 
 class WCMLClient(object):
@@ -287,7 +306,7 @@ class WCMLClient(object):
                             host = reader.read(host_length).decode('utf-8')
                             port = unpack('!H', reader.read(2))[0]
 
-                            self._station.incoming_wcml_message(message_type=WCMLMessageType.CONNECTION_MADE,
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
                                                                 from_id=from_id,
                                                                 to_id=to_id,
                                                                 host=host,
@@ -296,10 +315,21 @@ class WCMLClient(object):
                         elif wcml_msg_type == WCMLMessageType.DATA:
                             data = reader.read()
 
-                            self._station.incoming_wcml_message(message_type=WCMLMessageType.DATA,
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
                                                                 from_id=from_id,
                                                                 to_id=to_id,
                                                                 data=data)
+
+                        elif wcml_msg_type == WCMLMessageType.CONNECTION_LOST:
+                            host_length, = reader.read(1)
+                            host = reader.read(host_length).decode('utf-8')
+                            port = unpack('!H', reader.read(2))[0]
+
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
+                                                                from_id=from_id,
+                                                                to_id=to_id,
+                                                                host=host,
+                                                                port=port)
 
                         else:
                             raise NotImplementedError
