@@ -9,7 +9,7 @@ from aiohttp import web
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader
+from .util import WCMLMessageType, BytesReader, FernetEncryptor
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -166,6 +166,8 @@ class WCMLServer(object):
 
         self._ws: aiohttp.web.WebSocketResponse = None
 
+        self._fernet = FernetEncryptor('password')  # TODO
+
     async def send_wcml_message(self, *,
                                 message_type,
                                 from_id,
@@ -210,7 +212,14 @@ class WCMLServer(object):
         else:
             raise NotImplementedError
 
-        await self._ws.send_bytes(message)
+        # because of https://bugs.python.org/issue29930
+        # BaseProtocol._drain_helper() raise AssertionError sometimes.
+        # see https://github.com/aio-libs/aiohttp/issues/2934
+        # and https://github.com/aaugustin/websockets/commit/198b71537917adb44002573b14cbe23dbd4c21a2
+        # for more details
+        # currently the solution is to wrap is with a lock. remove it when the bug is fixed
+        encrypted_message = self._fernet.encrypt(message)
+        await self._ws.send_bytes(encrypted_message)
 
     async def _websocket_handler(self, request):
         """
@@ -228,7 +237,8 @@ class WCMLServer(object):
                 raise NotImplementedError
 
             elif msg.type == aiohttp.WSMsgType.BINARY:
-                reader = BytesReader(msg.data)
+                decrypted_message = self._fernet.decrypt(msg.data)
+                reader = BytesReader(decrypted_message)
                 wcml_msg_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
 
                 if wcml_msg_type == WCMLMessageType.CONNECTION_REQUEST:

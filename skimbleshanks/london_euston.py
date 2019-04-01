@@ -9,7 +9,7 @@ from aiohttp import web
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader
+from .util import WCMLMessageType, BytesReader, FernetEncryptor
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -24,7 +24,7 @@ class LondonEuston(Station):
     def __init__(self):
         Station.__init__(self)
 
-        self._london_euston_host: str = '192.168.1.3'  # TODO
+        self._london_euston_host: str = '192.168.10.51'  # TODO
         self._london_euston_port: int = 8888
 
         self._wcml_client: WCMLClient = WCMLClient(station=self,
@@ -262,6 +262,8 @@ class WCMLClient(object):
 
         self._ws: aiohttp.web.WebSocketResponse = None
 
+        self._fernet = FernetEncryptor('password')  # TODO
+
     async def send_wcml_message(self, *,
                                 message_type,
                                 from_id,
@@ -306,7 +308,8 @@ class WCMLClient(object):
         else:
             raise NotImplementedError
 
-        await self._ws.send_bytes(message)
+        encrypted_message = self._fernet.encrypt(message)
+        await self._ws.send_bytes(encrypted_message)
 
     async def wcml_client_routine(self):
         """
@@ -329,7 +332,8 @@ class WCMLClient(object):
                             raise NotImplementedError
 
                         elif msg.type == aiohttp.WSMsgType.BINARY:
-                            reader = BytesReader(msg.data)
+                            decrypted_message = self._fernet.decrypt(msg.data)
+                            reader = BytesReader(decrypted_message)
                             wcml_msg_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
 
                             if wcml_msg_type == WCMLMessageType.CONNECTION_MADE:
