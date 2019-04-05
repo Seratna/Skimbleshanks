@@ -12,7 +12,6 @@ from .station import Station
 from .protocol import BaseProtocol
 from .util import WCMLMessageType, BytesReader, FernetEncryptor
 
-
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
@@ -22,15 +21,22 @@ class LondonEuston(Station):
 
     """
 
-    def __init__(self):
+    def __init__(self,
+                 london_euston_host,
+                 london_euston_port,
+                 glasgow_central_host,
+                 glasgow_central_port,
+                 password):
         Station.__init__(self)
 
-        self._london_euston_host: str = '192.168.1.3'  # TODO
-        self._london_euston_port: int = 8888
+        self._london_euston_host: str = london_euston_host
+        self._london_euston_port: int = london_euston_port
+        self._password = password
 
         self._wcml_client: WCMLClient = WCMLClient(station=self,
-                                                   wcml_server_host='127.0.0.1',  # TODO
-                                                   wcml_server_port=9999)
+                                                   wcml_server_host=glasgow_central_host,
+                                                   wcml_server_port=glasgow_central_port,
+                                                   password=password)
 
     def register(self, protocol: 'LondonEustonProtocol'):
         self._id_2_protocol: Dict[int, LondonEustonProtocol]
@@ -256,15 +262,17 @@ class WCMLClient(object):
     def __init__(self,
                  station,
                  wcml_server_host,
-                 wcml_server_port):
+                 wcml_server_port,
+                 password):
         self._station = station
 
         self._wcml_server_host = wcml_server_host
         self._wcml_server_port = wcml_server_port
+        self._password = password
 
         self._ws: aiohttp.web.WebSocketResponse = None
 
-        self._fernet = FernetEncryptor('password')  # TODO
+        self._fernet = FernetEncryptor(password)
 
     async def send_wcml_message(self, *,
                                 message_type,

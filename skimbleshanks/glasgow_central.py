@@ -20,9 +20,19 @@ class GlasgowCentral(Station):
 
     """
 
-    def __init__(self):
+    def __init__(self,
+                 glasgow_central_host,
+                 glasgow_central_port,
+                 password):
         Station.__init__(self)
-        self.wcml_server = WCMLServer(station=self, host='127.0.0.1', port=9999)
+        self._glasgow_central_host = glasgow_central_host
+        self._glasgow_central_port = glasgow_central_port
+        self._password = password
+
+        self.wcml_server = WCMLServer(station=self,
+                                      host=glasgow_central_host,
+                                      port=glasgow_central_port,
+                                      password=password)
 
     def outgoing_wcml_message(self, *,
                               message_type,
@@ -155,18 +165,19 @@ class WCMLServer(object):
 
     """
 
-    def __init__(self, station, host, port):
+    def __init__(self, station, host, port, password):
         self._station = station
 
         self._host = host
         self._port = port
+        self._password = password
 
         self._app = web.Application()
         self._app.router.add_get('/WCML', self._websocket_handler)
 
         self._ws: aiohttp.web.WebSocketResponse = None
 
-        self._fernet = FernetEncryptor('password')  # TODO
+        self._fernet = FernetEncryptor(self._password)
 
         self._used_timestamp = int(time.time() * 1000)
 
