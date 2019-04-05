@@ -91,6 +91,7 @@ class GlasgowCentral(Station):
             except KeyError:
                 pass
             else:
+                logger.debug('counter party protocol closed, close protocol on this side')
                 protocol.close()
 
         else:
@@ -119,6 +120,7 @@ class GlasgowCentralProtocol(BaseProtocol):
                  station: GlasgowCentral,
                  counter_party_id: int):
         BaseProtocol.__init__(self, station=station, counter_party_id=counter_party_id)
+        logger.debug(f'protocol {self.id} created')
 
     @property
     def id(self):
@@ -136,6 +138,8 @@ class GlasgowCentralProtocol(BaseProtocol):
         else:
             raise ValueError(f'unknown peername format: {peername}')
 
+        logger.debug(f'protocol {self.id} made connection to {host}:{port}')
+
         self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_MADE,
                                             from_id=self.id,
                                             to_id=self._counter_party_id,
@@ -146,17 +150,21 @@ class GlasgowCentralProtocol(BaseProtocol):
         self._transport.close()
         # self._station.unregister(protocol=self)
 
+        logger.debug(f'protocol {self.id} lost connection')
+
     def close(self):
         self._transport.close()
         self._station.unregister(protocol=self)
 
     def data_received(self, data):
+        logger.debug(f'protocol {self.id} received data from destination')
         self._station.outgoing_wcml_message(message_type=WCMLMessageType.DATA,
                                             from_id=self.id,
                                             to_id=self._counter_party_id,
                                             data=data)
 
     def data_received_from_wcml_counter_party(self, data: bytes):
+        logger.debug(f'protocol {self.id} received data from counter party')
         self._transport.write(data)
 
 
@@ -233,12 +241,12 @@ class WCMLServer(object):
         # and https://github.com/aaugustin/websockets/commit/198b71537917adb44002573b14cbe23dbd4c21a2
         # for more details
         encrypted_message = self._fernet.encrypt(message)
-        with self._ws_lock:
+        async with self._ws_lock:
             await self._ws.send_bytes(encrypted_message)
 
     async def _websocket_handler(self, request):
         """
-        baisc code structure was adopted from official docs of aiohttp:
+        basic code structure was adopted from official docs of aiohttp:
         https://docs.aiohttp.org/en/stable/web_quickstart.html#websockets
 
         Args:
