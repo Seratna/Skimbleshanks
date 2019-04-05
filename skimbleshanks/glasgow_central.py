@@ -1,8 +1,8 @@
 from typing import List, Dict
 import logging
-import json
 import asyncio
 from struct import pack, unpack
+import time
 
 import aiohttp
 from aiohttp import web
@@ -43,7 +43,7 @@ class GlasgowCentral(Station):
             host = kwargs['host']
             port = kwargs['port']
 
-            logger.info(f'request connection to {host}:{port}')
+            logger.info(f'request connection to {host}:{port}. alive protocols: {len(self._id_2_protocol)}')
 
             def protocol_factory() -> GlasgowCentralProtocol:
                 return GlasgowCentralProtocol(station=self,
@@ -168,6 +168,8 @@ class WCMLServer(object):
 
         self._fernet = FernetEncryptor('password')  # TODO
 
+        self._used_timestamp = int(time.time() * 1000)
+
     async def send_wcml_message(self, *,
                                 message_type,
                                 from_id,
@@ -217,7 +219,6 @@ class WCMLServer(object):
         # see https://github.com/aio-libs/aiohttp/issues/2934
         # and https://github.com/aaugustin/websockets/commit/198b71537917adb44002573b14cbe23dbd4c21a2
         # for more details
-        # currently the solution is to wrap is with a lock. remove it when the bug is fixed
         encrypted_message = self._fernet.encrypt(message)
         await self._ws.send_bytes(encrypted_message)
 
@@ -229,6 +230,23 @@ class WCMLServer(object):
         Args:
             request:
         """
+        # authentication
+        headers = request.headers
+        encrypted_token = bytes.fromhex(headers['TOKEN'])
+        token = self._fernet.decrypt(encrypted_token)
+        reader = BytesReader(token)
+
+        train_name = reader.read(9).decode('utf-8')
+        if train_name != 'NightMail':
+            return web.Response(text="bad request")
+
+        timestamp = int.from_bytes(reader.read(8), 'big')
+        if timestamp <= self._used_timestamp:
+            return web.Response(text="bad request")
+        else:
+            self._used_timestamp = timestamp
+
+        # websocket connection
         ws = self._ws = web.WebSocketResponse(heartbeat=1)  # send heartbeat to client every second
         await ws.prepare(request)
 

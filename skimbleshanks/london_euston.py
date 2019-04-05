@@ -3,6 +3,7 @@ import logging
 import asyncio
 from struct import pack, unpack
 import socket
+import time
 
 import aiohttp
 from aiohttp import web
@@ -24,7 +25,7 @@ class LondonEuston(Station):
     def __init__(self):
         Station.__init__(self)
 
-        self._london_euston_host: str = '192.168.10.51'  # TODO
+        self._london_euston_host: str = '192.168.1.3'  # TODO
         self._london_euston_port: int = 8888
 
         self._wcml_client: WCMLClient = WCMLClient(station=self,
@@ -138,7 +139,7 @@ class LondonEustonProtocol(BaseProtocol):
 
     def connection_lost(self, exc):
         self._transport.close()
-        self._station.unregister(protocol=self)
+        # self._station.unregister(protocol=self)
 
     def close(self):
         self._transport.close()
@@ -208,7 +209,8 @@ class LondonEustonProtocol(BaseProtocol):
 
             port = unpack('!H', reader.read(2))[0]
 
-            logger.debug(f'request connection to {host}:{port}')
+            logger.debug(f'request connection to {host}:{port}. '
+                         f'alive protocols: {len(self._station._id_2_protocol)}')
 
             # request_glasgow_central_connection
             self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_REQUEST,
@@ -317,14 +319,18 @@ class WCMLClient(object):
         """
         while True:
             async with aiohttp.ClientSession() as session:
+                # make headers for authentication
+                timestamp = int(time.time() * 1000)
+                token = pack('!9sQ', b'NightMail', timestamp)
+                headers = {'TOKEN': self._fernet.encrypt(token).hex()}
+
+                # ws connection
                 async with session.ws_connect(
                         url=f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML',
-                        autoping=True  # automatically send pong on ping message from server
+                        autoping=True,  # automatically send pong on ping message from server
+                        headers=headers
                 ) as ws:
                     self._ws = ws
-
-                    # TODO authentication
-                    pass
 
                     # wait for messages
                     async for msg in ws:  # type: aiohttp.http.WSMessage
