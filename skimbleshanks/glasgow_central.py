@@ -231,7 +231,15 @@ class WCMLServer(object):
         # and https://github.com/aaugustin/websockets/commit/198b71537917adb44002573b14cbe23dbd4c21a2
         # for more details
         encrypted_message = self._fernet.encrypt(message)
-        await self._ws.send_bytes(encrypted_message)
+
+        while True:
+            try:
+                await self._ws.send_bytes(encrypted_message)
+            except AssertionError:
+                logger.warning('BaseProtocol._drain_helper() AssertionError caught')
+            else:
+                break
+
 
     async def _websocket_handler(self, request):
         """
