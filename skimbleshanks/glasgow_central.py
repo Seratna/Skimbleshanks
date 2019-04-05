@@ -181,6 +181,8 @@ class WCMLServer(object):
 
         self._used_timestamp = int(time.time() * 1000)
 
+        self._ws_lock = asyncio.Lock()
+
     async def send_wcml_message(self, *,
                                 message_type,
                                 from_id,
@@ -231,15 +233,8 @@ class WCMLServer(object):
         # and https://github.com/aaugustin/websockets/commit/198b71537917adb44002573b14cbe23dbd4c21a2
         # for more details
         encrypted_message = self._fernet.encrypt(message)
-
-        while True:
-            try:
-                await self._ws.send_bytes(encrypted_message)
-            except AssertionError:
-                logger.warning('BaseProtocol._drain_helper() AssertionError caught')
-            else:
-                break
-
+        with self._ws_lock:
+            await self._ws.send_bytes(encrypted_message)
 
     async def _websocket_handler(self, request):
         """
