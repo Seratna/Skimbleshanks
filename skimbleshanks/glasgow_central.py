@@ -187,6 +187,8 @@ class WCMLServer(object):
         """
         see: https://websockets.readthedocs.io/en/stable/intro.html#basic-example
         """
+        logger.info(f'websocket connection {id(ws_protocol)} started')
+
         # TODO: authentication
         pass
 
@@ -224,6 +226,7 @@ class WCMLServer(object):
             else:
                 raise NotImplementedError(f'unknown message type: {message}')
 
+        logger.info(f'websocket connection {id(ws_protocol)} closed')
         self._ws = None
 
     async def send_wcml_message(self, *,
