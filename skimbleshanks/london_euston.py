@@ -120,6 +120,7 @@ class LondonEuston(Station):
                                           host=self._london_euston_host,
                                           port=self._london_euston_port)
         async with server:
+            logger.info(f'server running on {self._london_euston_host}:{self._london_euston_port}')
             await server.serve_forever()
 
 

@@ -19,7 +19,7 @@ from skimbleshanks.london_euston import LondonEuston
 # see https://github.com/MagicStack/uvloop/issues/221
 # this issue was fixed in PR #224 (2019/02/17).
 # use uvloop after a new release with these updates
-# asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+# uvloop.install()
 
 
 def run():
@@ -40,6 +40,8 @@ def run():
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
     station_name = args.station_name
     if station_name == 'glasgow_central':
