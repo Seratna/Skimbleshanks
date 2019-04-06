@@ -11,7 +11,7 @@ from .station import Station
 from .protocol import BaseProtocol
 from .util import WCMLMessageType, BytesReader, FernetEncryptor
 
-logging.basicConfig(level=logging.DEBUG)
+
 logger = logging.getLogger()
 
 
@@ -53,7 +53,7 @@ class GlasgowCentral(Station):
             host = kwargs['host']
             port = kwargs['port']
 
-            logger.info(f'request connection to {host}:{port}. alive protocols: {len(self._id_2_protocol)}')
+            logger.info(f'received request: {host}:{port}. alive protocols: {len(self._id_2_protocol)}')
 
             def protocol_factory() -> GlasgowCentralProtocol:
                 return GlasgowCentralProtocol(station=self,
@@ -91,7 +91,7 @@ class GlasgowCentral(Station):
             except KeyError:
                 pass
             else:
-                logger.debug('counter party protocol closed, close protocol on this side')
+                logger.info(f'close protocol {protocol.id} due to closed counter party protocol')
                 protocol.close()
 
         else:

@@ -12,7 +12,7 @@ from .station import Station
 from .protocol import BaseProtocol
 from .util import WCMLMessageType, BytesReader, FernetEncryptor
 
-logging.basicConfig(level=logging.DEBUG)
+
 logger = logging.getLogger()
 
 
@@ -104,7 +104,7 @@ class LondonEuston(Station):
         protocols: List[LondonEustonProtocol] = list(self._id_2_protocol.values())
         for protocol in protocols:
             protocol.close()
-        logger.debug('all protocols closed')
+        logger.info('all protocols closed')
 
     async def start_service(self):
         await asyncio.gather(self._wcml_client.wcml_client_routine(),
@@ -215,8 +215,8 @@ class LondonEustonProtocol(BaseProtocol):
 
             port = unpack('!H', reader.read(2))[0]
 
-            logger.debug(f'request connection to {host}:{port}. '
-                         f'alive protocols: {len(self._station._id_2_protocol)}')
+            logger.info(f'request connection to {host}:{port}. '
+                        f'alive protocols: {len(self._station._id_2_protocol)}')
 
             # request_glasgow_central_connection
             self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_REQUEST,

@@ -1,9 +1,25 @@
 import argparse
 import json
 import asyncio
+import logging
+
+import uvloop
 
 from skimbleshanks.glasgow_central import GlasgowCentral
 from skimbleshanks.london_euston import LondonEuston
+
+
+# TODO
+# uvloop (https://github.com/MagicStack/uvloop) currently has a bug:
+# The Server class was missing __aenter__ and __aexit__ magic methods to
+# allow usage of the form:
+#
+# async with server:
+#     await server.serve_forever()
+# see https://github.com/MagicStack/uvloop/issues/221
+# this issue was fixed in PR #224 (2019/02/17).
+# use uvloop after a new release with these updates
+# asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
 def run():
@@ -12,9 +28,18 @@ def run():
     parser.add_argument('--glasgow_central', dest='station_name', action='store_const', const='glasgow_central')
     parser.add_argument('--london_euston', dest='station_name', action='store_const', const='london_euston')
     parser.set_defaults(station_name='')
+
     parser.add_argument('--config', required=True)
 
+    parser.add_argument('--debug', dest='debug', action='store_true')
+    parser.set_defaults(debug=False)
+
     args = parser.parse_args()
+
+    # ########################
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     station_name = args.station_name
     if station_name == 'glasgow_central':
