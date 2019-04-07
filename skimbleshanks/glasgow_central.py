@@ -4,9 +4,6 @@ import asyncio
 from struct import pack, unpack
 import time
 
-import aiohttp
-from aiohttp import web
-
 import websockets
 
 from .station import Station
@@ -181,6 +178,8 @@ class WCMLServer(object):
         self._password = password
 
         self._ws = None
+        self._ws_connection_available_event = asyncio.Event()
+
         self._fernet = FernetEncryptor(password)
 
     async def websocket_handler(self, ws_protocol, request_uri):
@@ -193,40 +192,56 @@ class WCMLServer(object):
         pass
 
         self._ws = ws_protocol
+        self._ws_connection_available_event.set()
 
-        async for message in ws_protocol:  # type: bytes
-            decrypted_message = self._fernet.decrypt(message)
-            reader = BytesReader(decrypted_message)
-            wcml_message_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
-
-            if wcml_message_type == WCMLMessageType.CONNECTION_REQUEST:
-                host_length, = reader.read(1)
-                host = reader.read(host_length).decode('utf-8')
-                port = unpack('!H', reader.read(2))[0]
-
-                self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                    from_id=from_id,
-                                                    to_id=to_id,
-                                                    host=host,
-                                                    port=port)
-
-            elif wcml_message_type == WCMLMessageType.DATA:
-                data = reader.read()
-
-                self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                    from_id=from_id,
-                                                    to_id=to_id,
-                                                    data=data)
-
-            elif wcml_message_type == WCMLMessageType.CONNECTION_LOST:
-                self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                    from_id=from_id,
-                                                    to_id=to_id)
-
+        # websockets library supports Asynchronous iterators like:
+        #
+        # async for message in websocket:
+        #     ...
+        #
+        # but it is difficult to catch the exception raised during the iteration
+        # so the "old" while loop style is used here
+        # see: https://websockets.readthedocs.io/en/stable/intro.html#asynchronous-iterators
+        while True:
+            try:
+                message: bytes = await ws_protocol.recv()
+            except websockets.exceptions.ConnectionClosed as e:
+                logger.info(e)
+                break
             else:
-                raise NotImplementedError(f'unknown message type: {message}')
+                decrypted_message = self._fernet.decrypt(message)
+                reader = BytesReader(decrypted_message)
+                wcml_message_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
 
-        logger.info(f'websocket connection {id(ws_protocol)} closed')
+                if wcml_message_type == WCMLMessageType.CONNECTION_REQUEST:
+                    host_length, = reader.read(1)
+                    host = reader.read(host_length).decode('utf-8')
+                    port = unpack('!H', reader.read(2))[0]
+
+                    self._station.incoming_wcml_message(message_type=wcml_message_type,
+                                                        from_id=from_id,
+                                                        to_id=to_id,
+                                                        host=host,
+                                                        port=port)
+
+                elif wcml_message_type == WCMLMessageType.DATA:
+                    data = reader.read()
+
+                    self._station.incoming_wcml_message(message_type=wcml_message_type,
+                                                        from_id=from_id,
+                                                        to_id=to_id,
+                                                        data=data)
+
+                elif wcml_message_type == WCMLMessageType.CONNECTION_LOST:
+                    self._station.incoming_wcml_message(message_type=wcml_message_type,
+                                                        from_id=from_id,
+                                                        to_id=to_id)
+                else:
+                    raise NotImplementedError(f'unknown message type: {message}')
+
+        logger.info(f'websocket connection {id(ws_protocol)} is closed')
+
+        self._ws_connection_available_event.clear()
         self._ws = None
 
     async def send_wcml_message(self, *,
@@ -237,10 +252,8 @@ class WCMLServer(object):
         """
         send a websocket message to WCML peer
         """
-        # abort if no websocket connection available
-        if self._ws is None or self._ws.closed:
-            logger.warning(f'websocket connection not available')
-            return
+        # wait for the ws connection to be available
+        await self._ws_connection_available_event.wait()
 
         # construct binary message according to message type
         if message_type == WCMLMessageType.CONNECTION_MADE:

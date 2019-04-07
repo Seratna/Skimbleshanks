@@ -5,8 +5,7 @@ from struct import pack, unpack
 import socket
 import time
 
-import aiohttp
-from aiohttp import web
+import websockets
 
 from .station import Station
 from .protocol import BaseProtocol
@@ -265,15 +264,88 @@ class WCMLClient(object):
                  wcml_server_host,
                  wcml_server_port,
                  password):
-        self._station = station
 
+        self._station = station
         self._wcml_server_host = wcml_server_host
         self._wcml_server_port = wcml_server_port
         self._password = password
 
-        self._ws: aiohttp.web.WebSocketResponse = None
+        self._ws = None
+        self._ws_connection_available_event = asyncio.Event()
 
         self._fernet = FernetEncryptor(password)
+
+    async def wcml_client_routine(self):
+        """
+        this is the major working loop of the websocket client
+        """
+        while True:
+            async with websockets.connect(
+                    uri=f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML',
+                    ping_interval=1,
+                    ping_timeout=10
+            ) as ws_protocol:
+                # TODO # make headers for authentication
+                # timestamp = int(time.time() * 1000)
+                # token = pack('!9sQ', b'NightMail', timestamp)
+                # headers = {'TOKEN': self._fernet.encrypt(token).hex()}
+
+                self._ws = ws_protocol
+                self._ws_connection_available_event.set()
+
+                # websockets library supports Asynchronous iterators like:
+                #
+                # async for message in websocket:
+                #     ...
+                #
+                # but it is difficult to catch the exception raised during the iteration
+                # so the "old" while loop style is used here
+                # see: https://websockets.readthedocs.io/en/stable/intro.html#asynchronous-iterators
+                while True:
+                    try:
+                        message: bytes = await ws_protocol.recv()
+                    except websockets.exceptions.ConnectionClosed as e:
+                        logger.info(e)
+                        break
+                    else:
+                        decrypted_message = self._fernet.decrypt(message)
+                        reader = BytesReader(decrypted_message)
+                        wcml_msg_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
+
+                        if wcml_msg_type == WCMLMessageType.CONNECTION_MADE:
+                            host_length, = reader.read(1)
+                            host = reader.read(host_length).decode('utf-8')
+                            port = unpack('!H', reader.read(2))[0]
+
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
+                                                                from_id=from_id,
+                                                                to_id=to_id,
+                                                                host=host,
+                                                                port=port)
+
+                        elif wcml_msg_type == WCMLMessageType.DATA:
+                            data = reader.read()
+
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
+                                                                from_id=from_id,
+                                                                to_id=to_id,
+                                                                data=data)
+
+                        elif wcml_msg_type == WCMLMessageType.CONNECTION_LOST:
+                            self._station.incoming_wcml_message(message_type=wcml_msg_type,
+                                                                from_id=from_id,
+                                                                to_id=to_id)
+
+                        else:
+                            raise NotImplementedError
+
+                logger.info(f'websocket connection {id(ws_protocol)} is closed')
+
+                self._ws_connection_available_event.clear()
+                self._ws = None
+
+                # close all protocols
+                self._station.on_wcml_close()
 
     async def send_wcml_message(self, *,
                                 message_type,
@@ -283,10 +355,8 @@ class WCMLClient(object):
         """
         send a websocket message to WCML peer
         """
-        # abort if no websocket connection available
-        if self._ws is None or self._ws.closed:
-            logger.warning(f'websocket connection not available')
-            return
+        # wait for the ws connection to be available
+        await self._ws_connection_available_event.wait()
 
         # construct binary message according to message type
         if message_type == WCMLMessageType.CONNECTION_REQUEST:
@@ -320,70 +390,4 @@ class WCMLClient(object):
             raise NotImplementedError
 
         encrypted_message = self._fernet.encrypt(message)
-        await self._ws.send_bytes(encrypted_message)
-
-    async def wcml_client_routine(self):
-        """
-        this is the major working loop of the websocket client
-        """
-        while True:
-            async with aiohttp.ClientSession() as session:
-                # make headers for authentication
-                timestamp = int(time.time() * 1000)
-                token = pack('!9sQ', b'NightMail', timestamp)
-                headers = {'TOKEN': self._fernet.encrypt(token).hex()}
-
-                # ws connection
-                async with session.ws_connect(
-                        url=f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML',
-                        autoping=True,  # automatically send pong on ping message from server
-                        headers=headers
-                ) as ws:
-                    self._ws = ws
-
-                    # wait for messages
-                    async for msg in ws:  # type: aiohttp.http.WSMessage
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            raise NotImplementedError
-
-                        elif msg.type == aiohttp.WSMsgType.BINARY:
-                            decrypted_message = self._fernet.decrypt(msg.data)
-                            reader = BytesReader(decrypted_message)
-                            wcml_msg_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
-
-                            if wcml_msg_type == WCMLMessageType.CONNECTION_MADE:
-                                host_length, = reader.read(1)
-                                host = reader.read(host_length).decode('utf-8')
-                                port = unpack('!H', reader.read(2))[0]
-
-                                self._station.incoming_wcml_message(message_type=wcml_msg_type,
-                                                                    from_id=from_id,
-                                                                    to_id=to_id,
-                                                                    host=host,
-                                                                    port=port)
-
-                            elif wcml_msg_type == WCMLMessageType.DATA:
-                                data = reader.read()
-
-                                self._station.incoming_wcml_message(message_type=wcml_msg_type,
-                                                                    from_id=from_id,
-                                                                    to_id=to_id,
-                                                                    data=data)
-
-                            elif wcml_msg_type == WCMLMessageType.CONNECTION_LOST:
-                                self._station.incoming_wcml_message(message_type=wcml_msg_type,
-                                                                    from_id=from_id,
-                                                                    to_id=to_id)
-
-                            else:
-                                raise NotImplementedError
-
-                        elif msg.type == aiohttp.WSMsgType.ERROR:
-                            logger.info(f'received aiohttp.WSMsgType.ERROR message: {msg.data}')
-
-                logger.info('websocket connection closed')
-
-                # close all protocols
-                self._station.on_wcml_close()
-
-                self._ws = None
+        await self._ws.send(encrypted_message)
