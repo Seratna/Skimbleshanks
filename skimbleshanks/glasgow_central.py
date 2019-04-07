@@ -96,15 +96,6 @@ class GlasgowCentral(Station):
         else:
             raise NotImplementedError
 
-    def on_wcml_close(self):
-        """
-        websocket connection was closed. clean up the protocols.
-        """
-        protocols: List[GlasgowCentralProtocol] = list(self._id_2_protocol.values())
-        for protocol in protocols:
-            protocol.close()
-        logger.debug('all protocols closed')
-
     def start_service(self):
         raise NotImplementedError
 
@@ -182,14 +173,36 @@ class WCMLServer(object):
 
         self._fernet = FernetEncryptor(password)
 
+        self._used_timestamp = int(time.time() * 1000)
+
     async def websocket_handler(self, ws_protocol, request_uri):
         """
         see: https://websockets.readthedocs.io/en/stable/intro.html#basic-example
         """
         logger.info(f'websocket connection {id(ws_protocol)} started')
 
-        # TODO: authentication
-        pass
+        # ##############
+        # authentication
+        # ##############
+
+        headers = ws_protocol.request_headers
+        encrypted_token = bytes.fromhex(headers['TOKEN'])
+        token = self._fernet.decrypt(encrypted_token)
+        reader = BytesReader(token)
+
+        train_name = reader.read(9).decode('utf-8')
+        if train_name != 'NightMail':
+            return
+
+        timestamp = int.from_bytes(reader.read(8), 'big')
+        if timestamp <= self._used_timestamp:
+            return
+        else:
+            self._used_timestamp = timestamp
+
+        # #######
+        # service
+        # #######
 
         self._ws = ws_protocol
         self._ws_connection_available_event.set()

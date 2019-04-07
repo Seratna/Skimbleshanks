@@ -96,15 +96,6 @@ class LondonEuston(Station):
         else:
             raise NotImplementedError
 
-    def on_wcml_close(self):
-        """
-        websocket connection was closed. clean up the protocols.
-        """
-        protocols: List[LondonEustonProtocol] = list(self._id_2_protocol.values())
-        for protocol in protocols:
-            protocol.close()
-        logger.info('all protocols closed')
-
     async def start_service(self):
         await asyncio.gather(self._wcml_client.wcml_client_routine(),
                              self._london_euston_station_routine())
@@ -280,16 +271,16 @@ class WCMLClient(object):
         this is the major working loop of the websocket client
         """
         while True:
-            async with websockets.connect(
-                    uri=f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML',
-                    ping_interval=1,
-                    ping_timeout=10
-            ) as ws_protocol:
-                # TODO # make headers for authentication
-                # timestamp = int(time.time() * 1000)
-                # token = pack('!9sQ', b'NightMail', timestamp)
-                # headers = {'TOKEN': self._fernet.encrypt(token).hex()}
+            # make headers for authentication
+            timestamp = int(time.time() * 1000)
+            token = pack('!9sQ', b'NightMail', timestamp)
+            headers = {'TOKEN': self._fernet.encrypt(token).hex()}
 
+            uri = f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML'
+            async with websockets.connect(uri=uri,
+                                          ping_interval=1,
+                                          ping_timeout=10,
+                                          extra_headers=headers) as ws_protocol:
                 self._ws = ws_protocol
                 self._ws_connection_available_event.set()
 
@@ -343,9 +334,6 @@ class WCMLClient(object):
 
                 self._ws_connection_available_event.clear()
                 self._ws = None
-
-                # close all protocols
-                self._station.on_wcml_close()
 
     async def send_wcml_message(self, *,
                                 message_type,
