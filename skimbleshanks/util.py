@@ -56,7 +56,7 @@ class UniqueIDFactory(object):
 
     """
     def __init__(self):
-        self._next_id = 0
+        self._next_id = 1
 
     def generate_id(self):
         ans = self._next_id

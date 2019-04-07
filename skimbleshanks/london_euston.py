@@ -136,9 +136,13 @@ class LondonEustonProtocol(BaseProtocol):
 
     def connection_lost(self, exc):
         self._transport.close()
-        # self._station.unregister(protocol=self)
+        self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
+                                            from_id=self.id,
+                                            to_id=self._counter_party_id)
 
-    def close(self):
+        logger.debug(f'protocol {self.id} lost connection')
+
+    def close_transport_and_unregister(self):
         self._transport.close()
         self._station.unregister(protocol=self)
 
@@ -148,13 +152,13 @@ class LondonEustonProtocol(BaseProtocol):
         if self._state == self.NEGOTIATION:
             version, = reader.read(1)
             if version != 0x05:
-                self.close()
+                self.close_transport_and_unregister()
                 return
 
             n_methods, = reader.read(1)
             methods = reader.read(n_methods)
             if 0x02 not in methods:
-                self.close()
+                self.close_transport_and_unregister()
                 return
 
             self._transport.write(b'\x05\x02')  # username / password
@@ -163,7 +167,7 @@ class LondonEustonProtocol(BaseProtocol):
         elif self._state == self.AUTHENTICATION:
             version, = reader.read(1)
             if version != 0x01:  # not a Socks5 connection
-                self.close()
+                self.close_transport_and_unregister()
                 return
 
             username_length, = reader.read(1)
@@ -183,7 +187,7 @@ class LondonEustonProtocol(BaseProtocol):
         elif self._state == self.REQUEST:
             version, cmd, _, address_type = reader.read(4)
             if version != 0x05 or cmd != 0x01:
-                self.close()
+                self.close_transport_and_unregister()
                 return
 
             if address_type == 0x03:  # domain
@@ -201,7 +205,7 @@ class LondonEustonProtocol(BaseProtocol):
                 host = socket.inet_ntop(socket.AF_INET6, host_bytes)
 
             else:
-                self.close()
+                self.close_transport_and_unregister()
                 return
 
             port = unpack('!H', reader.read(2))[0]
@@ -242,7 +246,7 @@ class LondonEustonProtocol(BaseProtocol):
         if self._state == self.REQUEST:
             self._transport.write(pack('!BBBBIH', 0x05, 0x04, 0x00, 0x01, 0x00, 0x00))
         elif self._state == self.DATA:
-            self.close()
+            self.close_transport_and_unregister()
 
 
 class WCMLClient(object):

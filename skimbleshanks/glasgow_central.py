@@ -91,7 +91,7 @@ class GlasgowCentral(Station):
                 pass
             else:
                 logger.info(f'close protocol {protocol.id} due to closed counter party protocol')
-                protocol.close()
+                protocol.close_transport_and_unregister()
 
         else:
             raise NotImplementedError
@@ -134,11 +134,13 @@ class GlasgowCentralProtocol(BaseProtocol):
 
     def connection_lost(self, exc):
         self._transport.close()
-        # self._station.unregister(protocol=self)
+        self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
+                                            from_id=self.id,
+                                            to_id=self._counter_party_id)
 
         logger.debug(f'protocol {self.id} lost connection')
 
-    def close(self):
+    def close_transport_and_unregister(self):
         self._transport.close()
         self._station.unregister(protocol=self)
 
