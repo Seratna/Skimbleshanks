@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import uvloop
+import coloredlogs
 
 from skimbleshanks.glasgow_central import GlasgowCentral
 from skimbleshanks.london_euston import LondonEuston
@@ -23,6 +24,10 @@ from skimbleshanks.london_euston import LondonEuston
 
 
 def run():
+    # ##########
+    # parse args
+    # ##########
+
     parser = argparse.ArgumentParser(description='start Glasgow_Central (server) or London_Euston (client)')
 
     parser.add_argument('--glasgow_central', dest='station_name', action='store_const', const='glasgow_central')
@@ -36,12 +41,17 @@ def run():
 
     args = parser.parse_args()
 
-    # ########################
+    # ######
+    # logger
+    # ######
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO)
+    coloredlogs.install(fmt='[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}',
+                        style='{',
+                        level='DEBUG' if args.debug else 'INFO')
+
+    # #################
+    # start application
+    # #################
 
     station_name = args.station_name
     if station_name == 'glasgow_central':
