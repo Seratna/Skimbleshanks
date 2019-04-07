@@ -13,13 +13,14 @@ class BaseProtocol(asyncio.Protocol):
                  counter_party_id: int):
 
         self._station = station
+        self._unique_id = station.generate_id()
         self._counter_party_id = counter_party_id
 
         self._transport = None
 
     @property
     def id(self):
-        return id(self)
+        return self._unique_id
 
     def set_counter_party_id(self, counter_party_id: int):
         self._counter_party_id = counter_party_id

@@ -112,10 +112,6 @@ class GlasgowCentralProtocol(BaseProtocol):
         BaseProtocol.__init__(self, station=station, counter_party_id=counter_party_id)
         logger.debug(f'protocol {self.id} created')
 
-    @property
-    def id(self):
-        return id(self)
-
     def connection_made(self, transport):
         self._transport = transport
         self._station.register(protocol=self)

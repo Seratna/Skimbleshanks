@@ -49,3 +49,16 @@ class FernetEncryptor(object):
 
     def decrypt(self, message: bytes):
         return self._fernet.decrypt(message)
+
+
+class UniqueIDFactory(object):
+    """
+
+    """
+    def __init__(self):
+        self._next_id = 0
+
+    def generate_id(self):
+        ans = self._next_id
+        self._next_id += 1
+        return ans

@@ -281,6 +281,8 @@ class WCMLClient(object):
                                           ping_interval=1,
                                           ping_timeout=10,
                                           extra_headers=headers) as ws_protocol:
+                logger.info(f'websocket connection {id(ws_protocol)} started')
+
                 self._ws = ws_protocol
                 self._ws_connection_available_event.set()
 
