@@ -296,7 +296,7 @@ class WCMLClient(object):
                     try:
                         message: bytes = await ws_protocol.recv()
                     except websockets.exceptions.ConnectionClosed as e:
-                        logger.info(e)
+                        logger.warning(e)
                         break
                     else:
                         decrypted_message = self._fernet.decrypt(message)
@@ -330,7 +330,7 @@ class WCMLClient(object):
                         else:
                             raise NotImplementedError
 
-                logger.info(f'websocket connection {id(ws_protocol)} is closed')
+                logger.warning(f'websocket connection {id(ws_protocol)} is closed')
 
                 self._ws_connection_available_event.clear()
                 self._ws = None

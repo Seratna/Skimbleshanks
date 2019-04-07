@@ -45,9 +45,14 @@ def run():
     # logger
     # ######
 
-    coloredlogs.install(fmt='[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}',
-                        style='{',
-                        level='DEBUG' if args.debug else 'INFO')
+    if args.debug:
+        coloredlogs.install(fmt='[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}',
+                            style='{',
+                            level='DEBUG')
+    else:
+        coloredlogs.install(fmt='[{asctime}][{levelname}] {message}',
+                            style='{',
+                            level='INFO')
 
     # #################
     # start application
