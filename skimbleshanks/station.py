@@ -17,18 +17,10 @@ class Station(object):
     def unregister(self, protocol):
         self._id_2_protocol.pop(protocol.id, None)
 
-    def outgoing_wcml_message(self, *,
-                              message_type,
-                              from_id,
-                              to_id,
-                              **kwargs):
+    def outgoing_wcml_message(self, message):
         raise NotImplementedError
 
-    def incoming_wcml_message(self, *,
-                              message_type,
-                              from_id,
-                              to_id,
-                              **kwargs):
+    def incoming_wcml_message(self, message):
         raise NotImplementedError
 
     def start_service(self):

@@ -8,8 +8,7 @@ import websockets
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader, FernetEncryptor
-
+from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage
 
 logger = logging.getLogger()
 
@@ -33,60 +32,45 @@ class GlasgowCentral(Station):
                                       port=glasgow_central_port,
                                       password=password)
 
-    def outgoing_wcml_message(self, *,
-                              message_type,
-                              from_id,
-                              to_id,
-                              **kwargs):
-        asyncio.create_task(self.wcml_server.send_wcml_message(message_type=message_type,
-                                                               from_id=from_id,
-                                                               to_id=to_id,
-                                                               **kwargs))
+    def outgoing_wcml_message(self, message: WCMLMessage):
+        asyncio.create_task(self.wcml_server.send_wcml_message(message=message))
 
-    def incoming_wcml_message(self, *,
-                              message_type,
-                              from_id,
-                              to_id,
-                              **kwargs):
-        if message_type == WCMLMessageType.CONNECTION_REQUEST:
-            host = kwargs['host']
-            port = kwargs['port']
-
-            logger.info(f'received request: {host}:{port}. alive protocols: {len(self._id_2_protocol)}')
+    def incoming_wcml_message(self, message: WCMLMessage):
+        if message.message_type == WCMLMessageType.CONNECTION_REQUEST:
+            logger.info(f'received request: {message.host}:{message.port}. '
+                        f'alive protocols: {len(self._id_2_protocol)}')
 
             def protocol_factory() -> GlasgowCentralProtocol:
                 return GlasgowCentralProtocol(station=self,
-                                              counter_party_id=from_id)
+                                              counter_party_id=message.from_id)
 
             async def connect():
                 loop = asyncio.get_running_loop()
                 try:
                     await loop.create_connection(protocol_factory=protocol_factory,
-                                                 host=host,
-                                                 port=port)
+                                                 host=message.host,
+                                                 port=message.port)
                 except (TimeoutError, OSError):
-                    logger.info(f'failed to connect to {host}:{port}')
-                    await self.wcml_server.send_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
-                                                             from_id=0,
-                                                             to_id=from_id)
+                    logger.info(f'failed to connect to {message.host}:{message.port}')
+                    await self.wcml_server.send_wcml_message(WCMLMessage(message_type=WCMLMessageType.CONNECTION_LOST,
+                                                                         from_id=0,
+                                                                         to_id=message.from_id))
 
             asyncio.create_task(connect())
 
-        elif message_type == WCMLMessageType.DATA:
-            data = kwargs['data']
-
+        elif message.message_type == WCMLMessageType.DATA:
             try:
-                protocol: GlasgowCentralProtocol = self._id_2_protocol[to_id]
+                protocol: GlasgowCentralProtocol = self._id_2_protocol[message.to_id]
             except KeyError:
-                self.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
-                                           from_id=to_id,
-                                           to_id=from_id)
+                self.outgoing_wcml_message(WCMLMessage(message_type=WCMLMessageType.CONNECTION_LOST,
+                                                       from_id=message.to_id,
+                                                       to_id=message.from_id))
             else:
-                protocol.data_received_from_wcml_counter_party(data)
+                protocol.data_received_from_wcml_counter_party(message.data)
 
-        elif message_type == WCMLMessageType.CONNECTION_LOST:
+        elif message.message_type == WCMLMessageType.CONNECTION_LOST:
             try:
-                protocol: GlasgowCentralProtocol = self._id_2_protocol[to_id]
+                protocol: GlasgowCentralProtocol = self._id_2_protocol[message.to_id]
             except KeyError:
                 pass
             else:
@@ -126,17 +110,19 @@ class GlasgowCentralProtocol(BaseProtocol):
 
         logger.debug(f'protocol {self.id} made connection to {host}:{port}')
 
-        self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_MADE,
-                                            from_id=self.id,
-                                            to_id=self._counter_party_id,
-                                            host=host,
-                                            port=port)
+        message = WCMLMessage(message_type=WCMLMessageType.CONNECTION_MADE,
+                              from_id=self.id,
+                              to_id=self._counter_party_id,
+                              host=host,
+                              port=port)
+        self._station.outgoing_wcml_message(message)
 
     def connection_lost(self, exc):
         self._transport.close()
-        self._station.outgoing_wcml_message(message_type=WCMLMessageType.CONNECTION_LOST,
-                                            from_id=self.id,
-                                            to_id=self._counter_party_id)
+        message = WCMLMessage(message_type=WCMLMessageType.CONNECTION_LOST,
+                              from_id=self.id,
+                              to_id=self._counter_party_id)
+        self._station.outgoing_wcml_message(message)
 
         logger.debug(f'protocol {self.id} lost connection')
 
@@ -146,20 +132,18 @@ class GlasgowCentralProtocol(BaseProtocol):
 
     def data_received(self, data):
         logger.debug(f'protocol {self.id} received data from destination')
-        self._station.outgoing_wcml_message(message_type=WCMLMessageType.DATA,
-                                            from_id=self.id,
-                                            to_id=self._counter_party_id,
-                                            data=data)
-
-    def data_received_from_wcml_counter_party(self, data: bytes):
-        logger.debug(f'protocol {self.id} received data from counter party')
-        self._transport.write(data)
+        message = WCMLMessage(message_type=WCMLMessageType.DATA,
+                              from_id=self.id,
+                              to_id=self._counter_party_id,
+                              data=data)
+        self._station.outgoing_wcml_message(message)
 
 
 class WCMLServer(object):
     """
 
     """
+
     def __init__(self, station, host, port, password):
         self._station = station
         self._host = host
@@ -215,89 +199,28 @@ class WCMLServer(object):
         # see: https://websockets.readthedocs.io/en/stable/intro.html#asynchronous-iterators
         while True:
             try:
-                message: bytes = await ws_protocol.recv()
+                encrypted_message: bytes = await ws_protocol.recv()
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(e)
                 break
             else:
-                decrypted_message = self._fernet.decrypt(message)
-                reader = BytesReader(decrypted_message)
-                wcml_message_type, from_id, to_id = unpack('!BQQ', reader.read(1 + 8 + 8))
-
-                if wcml_message_type == WCMLMessageType.CONNECTION_REQUEST:
-                    host_length, = reader.read(1)
-                    host = reader.read(host_length).decode('utf-8')
-                    port = unpack('!H', reader.read(2))[0]
-
-                    self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                        from_id=from_id,
-                                                        to_id=to_id,
-                                                        host=host,
-                                                        port=port)
-
-                elif wcml_message_type == WCMLMessageType.DATA:
-                    data = reader.read()
-
-                    self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                        from_id=from_id,
-                                                        to_id=to_id,
-                                                        data=data)
-
-                elif wcml_message_type == WCMLMessageType.CONNECTION_LOST:
-                    self._station.incoming_wcml_message(message_type=wcml_message_type,
-                                                        from_id=from_id,
-                                                        to_id=to_id)
-                else:
-                    raise NotImplementedError(f'unknown message type: {message}')
+                decrypted_message = self._fernet.decrypt(encrypted_message)
+                wcml_message = WCMLMessage.from_bytes(decrypted_message)
+                self._station.incoming_wcml_message(message=wcml_message)
 
         logger.warning(f'websocket connection {id(ws_protocol)} is closed')
 
         self._ws_connection_available_event.clear()
         self._ws = None
 
-    async def send_wcml_message(self, *,
-                                message_type,
-                                from_id,
-                                to_id,
-                                **kwargs):
+    async def send_wcml_message(self, message: WCMLMessage):
         """
         send a websocket message to WCML peer
         """
         # wait for the ws connection to be available
         await self._ws_connection_available_event.wait()
 
-        # construct binary message according to message type
-        if message_type == WCMLMessageType.CONNECTION_MADE:
-            host: str = kwargs['host']
-            port: int = kwargs['port']
-
-            message = pack(f'!BQQB{len(host)}sH',
-                           message_type,
-                           from_id,
-                           to_id,
-                           len(host),  # length of hostname
-                           host.encode('utf-8'),
-                           port)
-
-        elif message_type == WCMLMessageType.DATA:
-            data = kwargs['data']
-
-            message = pack(f'!BQQ{len(data)}s',
-                           message_type,
-                           from_id,
-                           to_id,
-                           data)
-
-        elif message_type == WCMLMessageType.CONNECTION_LOST:
-            message = pack(f'!BQQ',
-                           message_type,
-                           from_id,
-                           to_id)
-
-        else:
-            raise NotImplementedError
-
-        encrypted_message = self._fernet.encrypt(message)
+        encrypted_message = self._fernet.encrypt(message.bytes())
         await self._ws.send(encrypted_message)
 
     def start_service(self):

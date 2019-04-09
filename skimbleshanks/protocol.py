@@ -1,6 +1,10 @@
+import logging
 import asyncio
 
 from.station import Station
+
+
+logger = logging.getLogger()
 
 
 class BaseProtocol(asyncio.Protocol):
@@ -34,5 +38,6 @@ class BaseProtocol(asyncio.Protocol):
     def data_received(self, data):
         raise NotImplementedError
 
-    def data_received_from_wcml_counter_party(self, data):
-        raise NotImplementedError
+    def data_received_from_wcml_counter_party(self, data: bytes):
+        logger.debug(f'protocol {self.id} received data from counter party')
+        self._transport.write(data)
