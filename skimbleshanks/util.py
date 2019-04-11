@@ -13,6 +13,8 @@ class WCMLMessageType(object):
     CONNECTION_MADE = 0x01
     CONNECTION_LOST = 0x02
     DATA = 0x03
+    WEBSOCKET_PROMOTION = 0x04
+    PROTOCOL_SYNC = 0x05
 
 
 class WCMLMessage(object):
@@ -74,6 +76,14 @@ class WCMLMessage(object):
                         self._from_id,
                         self._to_id)
 
+        elif self._message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
+            promotion_index: int = self.promotion_index
+            return pack(f'!BQQQ',
+                        self._message_type,
+                        self._from_id,
+                        self._to_id,
+                        promotion_index)
+
         else:
             raise NotImplementedError(f'unknown message type: {self._message_type}')
 
@@ -99,7 +109,6 @@ class WCMLMessage(object):
 
         elif wcml_message_type == WCMLMessageType.DATA:
             data = reader.read()
-
             return WCMLMessage(message_type=wcml_message_type,
                                from_id=from_id,
                                to_id=to_id,
@@ -110,6 +119,13 @@ class WCMLMessage(object):
                                from_id=from_id,
                                to_id=to_id)
 
+        elif wcml_message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
+            promotion_index = unpack('!Q', reader.read(8))[0]
+            return WCMLMessage(message_type=wcml_message_type,
+                               from_id=from_id,
+                               to_id=to_id,
+                               promotion_index=promotion_index)
+
         else:
             raise NotImplementedError(f'unknown message type: {wcml_message_type}')
 
@@ -119,6 +135,9 @@ class WCMLMessage(object):
             return self._attr[name]
 
         elif self._message_type == WCMLMessageType.DATA and name == 'data':
+            return self._attr[name]
+
+        elif self._message_type == WCMLMessageType.WEBSOCKET_PROMOTION and name == 'promotion_index':
             return self._attr[name]
 
         raise AttributeError(f'message does not have attribute: {name}')
