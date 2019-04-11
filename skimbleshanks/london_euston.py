@@ -234,82 +234,6 @@ class LondonEustonProtocol(BaseProtocol):
             self.close_transport_and_unregister()
 
 
-# class WCMLClient(object):
-#     """
-#
-#     """
-#
-#     def __init__(self,
-#                  station,
-#                  wcml_server_host,
-#                  wcml_server_port,
-#                  password):
-#
-#         self._station = station
-#         self._wcml_server_host = wcml_server_host
-#         self._wcml_server_port = wcml_server_port
-#         self._password = password
-#
-#         self._ws = None
-#         self._ws_connection_available_event = asyncio.Event()
-#
-#         self._fernet = FernetEncryptor(password)
-#
-#     async def wcml_client_routine(self):
-#         """
-#         this is the major working loop of the websocket client
-#         """
-#         while True:
-#             # make headers for authentication
-#             timestamp = int(time.time() * 1000)
-#             token = pack('!9sQ', b'NightMail', timestamp)
-#             headers = {'TOKEN': self._fernet.encrypt(token).hex()}
-#
-#             uri = f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML'
-#             async with websockets.connect(uri=uri,
-#                                           ping_interval=1,
-#                                           ping_timeout=5,
-#                                           extra_headers=headers) as ws_protocol:
-#                 logger.info(f'websocket connection {id(ws_protocol)} started')
-#
-#                 self._ws = ws_protocol
-#                 self._ws_connection_available_event.set()
-#
-#                 # websockets library supports Asynchronous iterators like:
-#                 #
-#                 # async for message in websocket:
-#                 #     ...
-#                 #
-#                 # but it is difficult to catch the exception raised during the iteration
-#                 # so the "old" while loop style is used here
-#                 # see: https://websockets.readthedocs.io/en/stable/intro.html#asynchronous-iterators
-#                 while True:
-#                     try:
-#                         encrypted_message: bytes = await ws_protocol.recv()
-#                     except websockets.exceptions.ConnectionClosed as e:
-#                         logger.warning(e)
-#                         break
-#                     else:
-#                         decrypted_message = self._fernet.decrypt(encrypted_message)
-#                         wcml_message = WCMLMessage.from_bytes(decrypted_message)
-#                         self._station.incoming_wcml_message(message=wcml_message)
-#
-#                 logger.warning(f'websocket connection {id(ws_protocol)} is closed')
-#
-#                 self._ws_connection_available_event.clear()
-#                 self._ws = None
-#
-#     async def send_wcml_message(self, message: WCMLMessage):
-#         """
-#         send a websocket message to WCML peer
-#         """
-#         # wait for the ws connection to be available
-#         await self._ws_connection_available_event.wait()
-#
-#         encrypted_message = self._fernet.encrypt(message.bytes())
-#         await self._ws.send(encrypted_message)
-
-
 class WCMLClient(object):
     """
 
@@ -385,14 +309,15 @@ class WCMLClient(object):
                                                        ping_timeout=5,
                                                        extra_headers=headers)
             except ConnectionRefusedError:
-                logger.warning('websocket connection call failed')
+                logger.warning('[WS] connection call failed')
                 ws_protocol = None
 
             else:
-                logger.info(f'websocket connection {id(ws_protocol)} started')
+                logger.info(f'[WS {id(ws_protocol)}] started')
 
                 async with self._ws_set_lock:
                     self._ws_set.add(ws_protocol)
+                    logger.info(f'[WS {id(ws_protocol)}] added to pool. pool size: {len(self._ws_set)}')
 
                 # send promotion message
                 promotion_index = self._ws_promotion_index_factory.generate_id()
@@ -418,20 +343,19 @@ class WCMLClient(object):
                         logger.warning(e)
                         break
                     else:
-                        logger.info(f'###{len(self._ws_set)}')
                         decrypted_message = self._fernet.decrypt(encrypted_message)
                         message = WCMLMessage.from_bytes(decrypted_message)
 
                         if message.message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
                             if message.promotion_index > self._ws_promotion_index:
-                                logger.info(f'websocket connection {id(ws_protocol)} is promoted')
+                                logger.info(f'[WS {id(ws_protocol)}] promoted')
                                 self._ws = ws_protocol
                                 self._ws_promotion_index = message.promotion_index
                                 self._ws_connection_available_event.set()
                         else:
                             self._station.incoming_wcml_message(message=message)
 
-                logger.warning(f'websocket connection {id(ws_protocol)} is closed')
+                logger.warning(f'[WS {id(ws_protocol)}] closed')
 
             finally:  # clean-up actions
                 if ws_protocol:
@@ -448,5 +372,5 @@ class WCMLClient(object):
 
             # TODO re-connection (add waiting time before trying to re-connect)
             waiting_time = 0.1
-            logger.info(f'trying to reconnect in {waiting_time} second(s)')
+            logger.info(f'[WS] trying to reconnect in {waiting_time} second(s)')
             await asyncio.sleep(waiting_time)
