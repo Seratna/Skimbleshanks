@@ -251,7 +251,7 @@ class WCMLClient(object):
         self._password = password
 
         self._ws: WebSocketClientProtocol = None
-        self._ws_connection_available_event: asyncio.Event = asyncio.Event()
+        self._ws_connection_available_event: asyncio.Event = None  # must be created "inside the loop"
         self._ws_promotion_index: int = 0
         self._ws_promotion_index_factory = UniqueIDFactory()
 
@@ -261,6 +261,7 @@ class WCMLClient(object):
         self._fernet = FernetEncryptor(password)
 
     async def start_service(self, num_ws_connections: int):
+        self._ws_connection_available_event: asyncio.Event = asyncio.Event()  # must be created "inside the loop"
         await asyncio.wait([self.ws_client_routine() for _ in range(num_ws_connections)])
 
     async def send_message(self, message: WCMLMessage):
