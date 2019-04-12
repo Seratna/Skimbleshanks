@@ -77,12 +77,10 @@ class WCMLMessage(object):
                         self._to_id)
 
         elif self._message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
-            promotion_index: int = self.promotion_index
-            return pack(f'!BQQQ',
+            return pack(f'!BQQ',
                         self._message_type,
                         self._from_id,
-                        self._to_id,
-                        promotion_index)
+                        self._to_id)
 
         else:
             raise NotImplementedError(f'unknown message type: {self._message_type}')
@@ -120,11 +118,9 @@ class WCMLMessage(object):
                                to_id=to_id)
 
         elif wcml_message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
-            promotion_index = unpack('!Q', reader.read(8))[0]
             return WCMLMessage(message_type=wcml_message_type,
                                from_id=from_id,
-                               to_id=to_id,
-                               promotion_index=promotion_index)
+                               to_id=to_id)
 
         else:
             raise NotImplementedError(f'unknown message type: {wcml_message_type}')

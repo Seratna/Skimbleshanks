@@ -252,8 +252,6 @@ class WCMLClient(object):
 
         self._ws: WebSocketClientProtocol = None
         self._ws_connection_available_event: asyncio.Event = asyncio.Event()
-        self._ws_promotion_index: int = 0
-        self._ws_promotion_index_factory = UniqueIDFactory()
 
         self._ws_set: Set[WebSocketClientProtocol] = set()
         self._ws_set_lock: asyncio.Lock = asyncio.Lock()
@@ -274,21 +272,27 @@ class WCMLClient(object):
         await self._ws.send(encrypted_message)  # TODO catch exceptions raised during sending
 
     async def _promote(self):
-        promotion_index = self._ws_promotion_index_factory.generate_id()
         message = WCMLMessage(message_type=WCMLMessageType.WEBSOCKET_PROMOTION,
                               from_id=0,
-                              to_id=0,
-                              promotion_index=promotion_index)
+                              to_id=0)
         encrypted_message = self._fernet.encrypt(message.bytes())
 
+        async def notify(_ws_protocol):
+            if _ws_protocol.closed:
+                await asyncio.sleep(10)
+            try:
+                await _ws_protocol.send(encrypted_message)
+            except websockets.exceptions.ConnectionClosed:
+                await asyncio.sleep(10)
+
         async with self._ws_set_lock:
-            for ws_protocol in self._ws_set:
-                if ws_protocol.closed:
-                    continue
-                try:
-                    await ws_protocol.send(encrypted_message)
-                except websockets.exceptions.ConnectionClosed:
-                    pass
+            tasks = [notify(ws_protocol) for ws_protocol in self._ws_set]
+
+        done, pending = await asyncio.wait(tasks,
+                                           timeout=1,
+                                           return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:  # type: asyncio.Task
+            task.cancel()
 
     async def ws_client_routine(self):
         """
@@ -320,11 +324,9 @@ class WCMLClient(object):
                     logger.info(f'[WS {id(ws_protocol)}] added to pool. pool size: {len(self._ws_set)}')
 
                 # send promotion message
-                promotion_index = self._ws_promotion_index_factory.generate_id()
                 message = WCMLMessage(message_type=WCMLMessageType.WEBSOCKET_PROMOTION,
                                       from_id=0,
-                                      to_id=0,
-                                      promotion_index=promotion_index)
+                                      to_id=0)
                 encrypted_message = self._fernet.encrypt(message.bytes())
                 await ws_protocol.send(encrypted_message)  # TODO catch exceptions raised during sending
 
@@ -347,11 +349,9 @@ class WCMLClient(object):
                         message = WCMLMessage.from_bytes(decrypted_message)
 
                         if message.message_type == WCMLMessageType.WEBSOCKET_PROMOTION:
-                            if message.promotion_index > self._ws_promotion_index:
-                                logger.info(f'[WS {id(ws_protocol)}] promoted')
-                                self._ws = ws_protocol
-                                self._ws_promotion_index = message.promotion_index
-                                self._ws_connection_available_event.set()
+                            logger.info(f'[WS {id(ws_protocol)}] promoted')
+                            self._ws = ws_protocol
+                            self._ws_connection_available_event.set()
                         else:
                             self._station.incoming_wcml_message(message=message)
 
