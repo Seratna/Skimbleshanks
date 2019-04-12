@@ -89,7 +89,7 @@ class LondonEuston(Station):
         """
         this is the major working loop of the domestic server (London Euston)
         """
-        loop = asyncio.get_running_loop()
+        loop = asyncio.get_event_loop()
 
         server = await loop.create_server(lambda: LondonEustonProtocol(station=self),
                                           host=self._london_euston_host,
@@ -251,7 +251,7 @@ class WCMLClient(object):
         self._password = password
 
         self._ws: WebSocketClientProtocol = None
-        self._ws_connection_available_event: asyncio.Event = None  # must be created "inside the loop"
+        self._ws_connection_available_event: asyncio.Event = asyncio.Event()
         self._ws_promotion_index: int = 0
         self._ws_promotion_index_factory = UniqueIDFactory()
 
@@ -261,7 +261,6 @@ class WCMLClient(object):
         self._fernet = FernetEncryptor(password)
 
     async def start_service(self, num_ws_connections: int):
-        self._ws_connection_available_event: asyncio.Event = asyncio.Event()  # must be created "inside the loop"
         await asyncio.wait([self.ws_client_routine() for _ in range(num_ws_connections)])
 
     async def send_message(self, message: WCMLMessage):
@@ -309,8 +308,8 @@ class WCMLClient(object):
                                                        ping_interval=1,
                                                        ping_timeout=5,
                                                        extra_headers=headers)
-            except ConnectionRefusedError:
-                logger.warning('[WS] connection call failed')
+            except (ConnectionRefusedError, ConnectionResetError, TimeoutError) as e:
+                logger.warning(f'[WS] connection call failed. Exception: {e}')
                 ws_protocol = None
 
             else:

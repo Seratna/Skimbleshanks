@@ -46,7 +46,7 @@ class GlasgowCentral(Station):
                                               counter_party_id=message.from_id)
 
             async def connect():
-                loop = asyncio.get_running_loop()
+                loop = asyncio.get_event_loop()
                 try:
                     await loop.create_connection(protocol_factory=protocol_factory,
                                                  host=message.host,
