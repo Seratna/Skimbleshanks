@@ -241,25 +241,35 @@ def init_logger(log_level=logging.INFO):
     logger.setLevel(log_level)
 
     if log_level == logging.DEBUG:
-        log_format = '[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}'
+        log_format = ('{white}[{asctime}]'
+                      '{blue}[{module}:{funcName}():{lineno}]'
+                      '{log_color}[{levelname}] {message_log_color}{message}{reset}')
     else:
-        log_format = '[{asctime}][{levelname}] {message}'
+        log_format = ('{white}[{asctime}]'
+                      '{log_color}[{levelname}] {message_log_color}{message}{reset}')
     colored_formatter = colorlog.ColoredFormatter(
         fmt=log_format,
         style='{',
         log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'green',
+            'DEBUG': 'bold_cyan',
+            'INFO': 'bold_green',
             'WARNING': 'bold_yellow',
             'ERROR': 'bold_red',
             'CRITICAL': 'bold_red,bg_white',
+        },
+        secondary_log_colors={
+            'message': {
+                'DEBUG': 'white',
+                'INFO': 'white',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'bold_red,bg_white',
+            }
         }
     )
 
-    stream_handler = colorlog.StreamHandler(stream=sys.stdout)
+    stream_handler = colorlog.StreamHandler()
     stream_handler.setFormatter(colored_formatter)
     stream_handler.setLevel(log_level)
 
     logger.addHandler(stream_handler)
-
-    return logger
