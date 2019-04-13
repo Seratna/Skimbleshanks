@@ -81,9 +81,14 @@ class LondonEuston(Station):
         else:
             raise NotImplementedError
 
-    async def start_service(self):
-        await asyncio.gather(self._wcml_client.start_service(10),  # TODO config
-                             self._london_euston_station_routine())
+    def start_service(self):
+        async def _start_service():
+            await asyncio.gather(self._wcml_client.start_service(10),  # TODO config
+                                 self._london_euston_station_routine())
+
+        # don't use asyncio.run() as asyncio.run() always create a new event loop
+        asyncio.get_event_loop().run_until_complete(_start_service())
+        asyncio.get_event_loop().run_forever()
 
     async def _london_euston_station_routine(self):
         """

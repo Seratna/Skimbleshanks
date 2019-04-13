@@ -82,7 +82,7 @@ class GlasgowCentral(Station):
             raise NotImplementedError
 
     def start_service(self):
-        raise NotImplementedError
+        self.wcml_server.start_service()
 
 
 class GlasgowCentralProtocol(BaseProtocol):

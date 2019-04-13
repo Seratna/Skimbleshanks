@@ -66,7 +66,7 @@ def run():
         glasgow_central = GlasgowCentral(glasgow_central_host=config['glasgow_central_host'],
                                          glasgow_central_port=config['glasgow_central_port'],
                                          password=config['password'])
-        glasgow_central.wcml_server.start_service()
+        glasgow_central.start_service()
 
     elif station_name == 'london_euston':
         with open(args.config) as file:
@@ -77,8 +77,7 @@ def run():
                                      glasgow_central_host=config['glasgow_central_host'],
                                      glasgow_central_port=config['glasgow_central_port'],
                                      password=config['password'])
-
-        asyncio.run(london_euston.start_service())
+        london_euston.start_service()
 
     else:
         raise ValueError('unknown station name')
