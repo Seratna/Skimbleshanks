@@ -9,7 +9,8 @@ from websockets.server import WebSocketServerProtocol
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory
+from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory, WCMLAuthenticator
+
 
 logger = logging.getLogger()
 
@@ -157,9 +158,8 @@ class WCMLServer(object):
         self._ws_set: Set[WebSocketServerProtocol] = set()
         self._ws_set_lock: asyncio.Lock = asyncio.Lock()
 
-        self._used_timestamp = int(time.time() * 1000)
-
         self._fernet = FernetEncryptor(password)
+        self._wcml_authenticator = WCMLAuthenticator()
 
     def start_service(self):
         # TODO
@@ -214,21 +214,11 @@ class WCMLServer(object):
         # ##############
 
         headers = ws_protocol.request_headers
-        encrypted_token = bytes.fromhex(headers['TOKEN'])
-        token = self._fernet.decrypt(encrypted_token)
-        reader = BytesReader(token)
-
-        train_name = reader.read(9).decode('utf-8')
-        if train_name != 'NightMail':
-            logger.info(f'[WS {id(ws_protocol)}] failed authentication (train name)')
+        encrypted_secret = bytes.fromhex(headers['SECRET'])
+        secret = self._fernet.decrypt(encrypted_secret)
+        if not self._wcml_authenticator.authenticate(secret):
+            logger.info(f'[WS {id(ws_protocol)}] failed authentication')
             return
-
-        timestamp = int.from_bytes(reader.read(8), 'big')
-        if timestamp <= self._used_timestamp:
-            logger.info(f'[WS {id(ws_protocol)}] failed authentication (timestamp)')
-            return
-        else:
-            self._used_timestamp = timestamp
 
         # #######
         # service

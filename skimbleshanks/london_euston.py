@@ -5,6 +5,7 @@ import asyncio
 from struct import pack, unpack
 import socket
 import time
+import uuid
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -305,9 +306,10 @@ class WCMLClient(object):
         """
         while True:
             # make headers for authentication
-            timestamp = int(time.time() * 1000)
-            token = pack('!9sQ', b'NightMail', timestamp)
-            headers = {'TOKEN': self._fernet.encrypt(token).hex()}
+            timestamp = time.time()
+            token = uuid.uuid4()
+            secret = pack('!9sd16s', b'NightMail', timestamp, token.bytes)
+            headers = {'SECRET': self._fernet.encrypt(secret).hex()}
 
             uri = f'ws://{self._wcml_server_host}:{self._wcml_server_port}/WCML'
             ws_protocol: WebSocketClientProtocol = None

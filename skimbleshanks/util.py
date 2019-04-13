@@ -1,11 +1,18 @@
 import base64
 import os
 from struct import pack, unpack
+import time
+import asyncio
+import logging
+import uuid
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.fernet import Fernet
+
+
+logger = logging.getLogger('skimbleshanks')
 
 
 class WCMLMessageType(object):
@@ -137,6 +144,44 @@ class WCMLMessage(object):
             return self._attr[name]
 
         raise AttributeError(f'message does not have attribute: {name}')
+
+
+class WCMLAuthenticator(object):
+    """
+
+    """
+    def __init__(self):
+        self._token_set = set()
+        self._valid_time_length = 5  # seconds # TODO
+
+    def authenticate(self, secret: bytes):
+        train_name_bytes, timestamp, token_bytes = unpack('!9sd16s', secret)
+
+        # check train name
+        train_name = train_name_bytes.decode('utf-8')
+        if train_name != 'NightMail':
+            return False
+
+        # check time stamp
+        current_timestamp = time.time()
+        if abs(timestamp - current_timestamp) > self._valid_time_length:
+            return False
+
+        # check uuid token
+        token = uuid.UUID(bytes=token_bytes)
+        if token in self._token_set:
+            return False
+
+        # add token to set
+        self._token_set.add(token)
+
+        # schedule token removal in (self._valid_time_length * 1.5) second(s)
+        async def _discard_token():
+            await asyncio.sleep(self._valid_time_length * 1.5)
+            self._token_set.discard(token)
+        asyncio.create_task(_discard_token())
+
+        return True
 
 
 class BytesReader(object):
