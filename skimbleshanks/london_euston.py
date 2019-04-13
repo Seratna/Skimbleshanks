@@ -284,21 +284,22 @@ class WCMLClient(object):
         encrypted_message = self._fernet.encrypt(message.bytes())
 
         async def notify(_ws_protocol):
-            if _ws_protocol.closed:
-                await asyncio.sleep(10)
             try:
                 await _ws_protocol.send(encrypted_message)
             except websockets.exceptions.ConnectionClosed:
                 await asyncio.sleep(10)
 
         async with self._ws_set_lock:
-            tasks = [notify(ws_protocol) for ws_protocol in self._ws_set]
+            tasks = [notify(ws_protocol) for ws_protocol in self._ws_set if not ws_protocol.closed]
 
-        done, pending = await asyncio.wait(tasks,
-                                           timeout=1,
-                                           return_when=asyncio.FIRST_COMPLETED)
-        for task in pending:  # type: asyncio.Task
-            task.cancel()
+        if tasks:
+            done, pending = await asyncio.wait(tasks,
+                                               timeout=1,
+                                               return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:  # type: asyncio.Task
+                task.cancel()
+        else:
+            logger.warning('no websocket connection available in the set')
 
     async def ws_client_routine(self):
         """
