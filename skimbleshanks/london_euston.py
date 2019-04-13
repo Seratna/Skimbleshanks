@@ -275,7 +275,25 @@ class WCMLClient(object):
         await self._ws_connection_available_event.wait()
 
         encrypted_message = self._fernet.encrypt(message.bytes())
-        await self._ws.send(encrypted_message)  # TODO catch exceptions raised during sending
+
+        try:
+            await self._ws.send(encrypted_message)
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        else:
+            return
+
+        # if first sending failed, try all the websocket connections
+        async with self._ws_set_lock:
+            ws_set_snapshot = list(self._ws_set_lock)
+
+        for ws_protocol in ws_set_snapshot:
+            try:
+                await ws_protocol.send(encrypted_message)
+            except websockets.exceptions.ConnectionClosed:
+                pass
+            else:
+                return
 
     async def _promote(self):
         message = WCMLMessage(message_type=WCMLMessageType.WEBSOCKET_PROMOTION,
@@ -330,6 +348,9 @@ class WCMLClient(object):
                 async with self._ws_set_lock:
                     self._ws_set.add(ws_protocol)
                     logger.info(f'[WS {id(ws_protocol)}] added to pool. pool size: {len(self._ws_set)}')
+
+                self._ws = ws_protocol
+                self._ws_connection_available_event.set()
 
                 # send promotion message
                 message = WCMLMessage(message_type=WCMLMessageType.WEBSOCKET_PROMOTION,
