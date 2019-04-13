@@ -6,13 +6,14 @@ import time
 
 import websockets
 from websockets.server import WebSocketServerProtocol
+import colorlog
 
 from .station import Station
 from .protocol import BaseProtocol
 from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory, WCMLAuthenticator
 
 
-logger = logging.getLogger()
+logger = colorlog.getLogger('skimbleshanks')
 
 
 class GlasgowCentral(Station):

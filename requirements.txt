@@ -1,4 +1,4 @@
 cryptography
 uvloop
 websockets
-coloredlogs
+colorlog

@@ -9,12 +9,14 @@ import uuid
 
 import websockets
 from websockets.client import WebSocketClientProtocol
+import colorlog
 
 from .station import Station
 from .protocol import BaseProtocol
 from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory
 
-logger = logging.getLogger()
+
+logger = colorlog.getLogger('skimbleshanks')
 
 
 class LondonEuston(Station):

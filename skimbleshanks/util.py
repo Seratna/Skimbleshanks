@@ -1,5 +1,5 @@
 import base64
-import os
+import sys
 from struct import pack, unpack
 import time
 import asyncio
@@ -10,9 +10,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.fernet import Fernet
-
-
-logger = logging.getLogger('skimbleshanks')
+import colorlog
 
 
 class WCMLMessageType(object):
@@ -150,6 +148,7 @@ class WCMLAuthenticator(object):
     """
 
     """
+
     def __init__(self):
         self._token_set = set()
         self._valid_time_length = 5  # seconds # TODO
@@ -179,6 +178,7 @@ class WCMLAuthenticator(object):
         async def _discard_token():
             await asyncio.sleep(self._valid_time_length * 1.5)
             self._token_set.discard(token)
+
         asyncio.create_task(_discard_token())
 
         return True
@@ -233,3 +233,33 @@ class UniqueIDFactory(object):
         ans = self._next_id
         self._next_id += 1
         return ans
+
+
+def init_logger(log_level=logging.INFO):
+    logger = colorlog.getLogger('skimbleshanks')
+    assert len(logger.handlers) == 0
+    logger.setLevel(log_level)
+
+    if log_level == logging.DEBUG:
+        log_format = '[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}'
+    else:
+        log_format = '[{asctime}][{levelname}] {message}'
+    colored_formatter = colorlog.ColoredFormatter(
+        fmt=log_format,
+        style='{',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'bold_yellow',
+            'ERROR': 'bold_red',
+            'CRITICAL': 'bold_red,bg_white',
+        }
+    )
+
+    stream_handler = colorlog.StreamHandler(stream=sys.stdout)
+    stream_handler.setFormatter(colored_formatter)
+    stream_handler.setLevel(log_level)
+
+    logger.addHandler(stream_handler)
+
+    return logger

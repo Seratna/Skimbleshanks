@@ -1,13 +1,11 @@
 import argparse
 import json
-import asyncio
-import logging
 
 import uvloop
-import coloredlogs
 
 from skimbleshanks.glasgow_central import GlasgowCentral
 from skimbleshanks.london_euston import LondonEuston
+from skimbleshanks.util import init_logger
 
 
 # TODO
@@ -45,14 +43,7 @@ def run():
     # logger
     # ######
 
-    if args.debug:
-        coloredlogs.install(fmt='[{asctime}][{module}:{funcName}():{lineno}][{levelname}] {message}',
-                            style='{',
-                            level='DEBUG')
-    else:
-        coloredlogs.install(fmt='[{asctime}][{levelname}] {message}',
-                            style='{',
-                            level='INFO')
+    init_logger()
 
     # #################
     # start application
