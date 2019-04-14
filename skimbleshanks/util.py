@@ -235,18 +235,18 @@ class UniqueIDFactory(object):
         return ans
 
 
-def init_logger(log_level=logging.INFO):
+def setup_logger(log_level=logging.INFO):
     logger = colorlog.getLogger('skimbleshanks')
     assert len(logger.handlers) == 0
     logger.setLevel(log_level)
 
     if log_level == logging.DEBUG:
-        log_format = ('{white}[{asctime}]'
-                      '{blue}[{module}:{funcName}():{lineno}]'
-                      '{log_color}[{levelname}] {message_log_color}{message}{reset}')
+        log_format = ('{white}[{asctime}]{reset}'
+                      '{blue}[{module}:{funcName}():{lineno}]{reset}'
+                      '{log_color}[{levelname}]{reset} {message_log_color}{message}{reset}')
     else:
-        log_format = ('{white}[{asctime}]'
-                      '{log_color}[{levelname}] {message_log_color}{message}{reset}')
+        log_format = ('{white}[{asctime}]{reset}'
+                      '{log_color}[{levelname}]{reset} {message_log_color}{message}{reset}')
     colored_formatter = colorlog.ColoredFormatter(
         fmt=log_format,
         style='{',
@@ -273,3 +273,28 @@ def init_logger(log_level=logging.INFO):
     stream_handler.setLevel(log_level)
 
     logger.addHandler(stream_handler)
+
+
+class Pause(object):
+    """
+
+    """
+    def __init__(self):
+        self._count = 0
+
+    def pause_time(self):
+        self._count += 1
+
+        if self._count <= 5:
+            length = 0
+        elif 5 < self._count <= 10:
+            length = 0.1 * (self._count - 5)
+        elif 10 < self._count <= 20:
+            length = 1 * (self._count - 10)
+        else:
+            length = 10
+
+        return length
+
+    def reset(self):
+        self._count = 0

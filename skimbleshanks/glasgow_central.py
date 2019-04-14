@@ -10,7 +10,7 @@ import colorlog
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory, WCMLAuthenticator
+from .util import WCMLMessageType, FernetEncryptor, WCMLMessage, WCMLAuthenticator
 
 
 logger = colorlog.getLogger('skimbleshanks')

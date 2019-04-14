@@ -13,7 +13,7 @@ import colorlog
 
 from .station import Station
 from .protocol import BaseProtocol
-from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, UniqueIDFactory
+from .util import WCMLMessageType, BytesReader, FernetEncryptor, WCMLMessage, Pause
 
 
 logger = colorlog.getLogger('skimbleshanks')
@@ -325,6 +325,8 @@ class WCMLClient(object):
         """
         this is the major working loop of 1 websocket client
         """
+        pause = Pause()
+
         while True:
             # make headers for authentication
             timestamp = time.time()
@@ -346,6 +348,7 @@ class WCMLClient(object):
 
             else:
                 logger.info(f'[WS {id(ws_protocol)}] started')
+                pause.reset()
 
                 async with self._ws_set_lock:
                     self._ws_set.add(ws_protocol)
@@ -401,7 +404,7 @@ class WCMLClient(object):
 
                     await self._promote()
 
-            # TODO re-connection (add waiting time before trying to re-connect)
-            waiting_time = 0.1
-            logger.info(f'[WS] trying to reconnect in {waiting_time} second(s)')
-            await asyncio.sleep(waiting_time)
+            # pause before trying to re-connect
+            pause_time = pause.pause_time()
+            logger.info(f'[WS] will try to reconnect in {pause_time} second(s)')
+            await asyncio.sleep(pause_time)

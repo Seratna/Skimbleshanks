@@ -5,7 +5,7 @@ import uvloop
 
 from skimbleshanks.glasgow_central import GlasgowCentral
 from skimbleshanks.london_euston import LondonEuston
-from skimbleshanks.util import init_logger
+from skimbleshanks.util import setup_logger
 
 
 # TODO
@@ -43,7 +43,7 @@ def run():
     # logger
     # ######
 
-    init_logger()
+    setup_logger()
 
     # #################
     # start application
