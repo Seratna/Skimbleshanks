@@ -342,7 +342,7 @@ class WCMLClient(object):
                                                        ping_interval=1,
                                                        ping_timeout=5,
                                                        extra_headers=headers)
-            except (ConnectionRefusedError, ConnectionResetError, TimeoutError) as e:
+            except (ConnectionRefusedError, ConnectionResetError, TimeoutError, socket.gaierror) as e:
                 logger.warning(f'[WS] connection call failed. Exception: {e}')
                 ws_protocol = None
 

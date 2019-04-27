@@ -41,7 +41,8 @@ class GlasgowCentral(Station):
     def incoming_wcml_message(self, message: WCMLMessage):
         if message.message_type == WCMLMessageType.CONNECTION_REQUEST:
             logger.info(f'received request: {message.host}:{message.port}. '
-                        f'alive protocols: {len(self._id_2_protocol)}')
+                        f'alive protocols: {len(self._id_2_protocol)}. '
+                        f'alive tasks: {len(asyncio.all_tasks())}')
 
             def protocol_factory() -> GlasgowCentralProtocol:
                 return GlasgowCentralProtocol(station=self,
